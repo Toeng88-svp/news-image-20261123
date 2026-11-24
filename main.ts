@@ -6,6 +6,7 @@
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
 import { copyFileSync, readFileSync, statSync } from 'node:fs';
+import { crc32 } from 'node:zlib';
 import { join } from 'node:path';
 
 // --- validation added for this entry -------------------------------------
@@ -31,6 +32,16 @@ const width = bytes.readUInt32BE(16);
 const height = bytes.readUInt32BE(20);
 if (width !== EXPECTED || height !== EXPECTED) {
   throw new Error(`entry.png is ${width}x${height}, expected ${EXPECTED}x${EXPECTED}`);
+}
+
+// The IHDR chunk also carries a CRC-32 over its type+data bytes (offsets
+// 12 through 28 inclusive), stored big-endian at offsets 29-32. A corrupted
+// IHDR could pass the signature and size checks above yet fail the gate's
+// whole-PNG validation, so it is worth verifying the checksum here too.
+const ihdrCrc = crc32(bytes.subarray(12, 29));
+const storedCrc = bytes.readUInt32BE(29);
+if (ihdrCrc !== storedCrc) {
+  throw new Error(`entry.png has a corrupt IHDR chunk (CRC mismatch: computed ${ihdrCrc}, stored ${storedCrc})`);
 }
 
 const size = statSync(sourcePath).size;
